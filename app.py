@@ -18,13 +18,13 @@ def token_required(f):
             token = request.headers.get('x-access-token')
 
         if not token:
-            return jsonify({'status':'error', "logs":"Token is missing!"}), 400
+            return jsonify(response_base(401, "Không tìm thấy token!", {})), 401
 
         try:
             data = jwt.decode(token, app.config['SECRET_KEY'])
             current_user = User.query.filter(User.id == data['id']).first()
         except:
-            return jsonify({'status':'error', "logs":"Token is invalid!"}), 400
+            return jsonify(response_base(401, "Token lỗi!", {})), 401
 
         return f(current_user, *args, **kwargs)
     return decorated
@@ -35,7 +35,7 @@ def get_one_user(username):
     user_query = User.query.filter(User.username == username).first()
 
     if not user_query:
-        return jsonify({"status":"error", "logs":"Not found %s!!!" % username }), 404
+        return jsonify(response_base(0, "Không tìm thấy tài khoản %s!!!" % username, {})), 0
     else:
         data = {
             "email": user_query.email,
@@ -69,12 +69,22 @@ def get_one_user(username):
             data_rates.append(data_rate)
         if len(data_rates) != 0:
             star_number = star_number/len(data_rates)
-        return jsonify({"status":"success", "users":data, "star_number":star_number, "rating":data_rates}), 200
+
+        response_data = {
+            "users":data,
+            "star_number":star_number,
+            "rating":data_rates
+        }
+        return jsonify(response_base(200, "Lấy dữ liệu thành công!", response_data)), 200
 
 
 @app.route('/user', methods=['POST'])
 def create_user():
-    data = request.get_json()
+    data = get_request(request.get_json())
+
+    user = User.query.filter(User.username==data['username'] or User.email == data['email']).first()
+    if user:
+        return jsonify(response_base(0, "Username hoặc email đã được sử dụng, vui lòng thử lại!", {})), 0
 
     hashed_password = generate_password_hash(data['password'], method='sha256')
 
@@ -87,19 +97,24 @@ def create_user():
     new_user.is_verify = False
     new_user.is_active = True
 
-    otp = random_str(size=80)
-    v = VerifyMail()
-    v.is_verify = False
-    v.verify_code = otp
-    v.to_email = data['email']
+    # otp = random_str(size=80)
+    # v = VerifyMail()
+    # v.is_verify = False
+    # v.verify_code = otp
+    # v.to_email = data['email']
 
-    if send_mail_to_verify(data['email'], data['full_name'], otp, request.host.title().lower()) == True:
-        db.session.add(new_user)
-        db.session.add(v)
-        db.session.commit()
-        return jsonify({"status": "success", "logs": "Please check your email for confirmation!"}), 202
-    else:
-        return jsonify({"status": "error", "logs": "Can't send email, please re-register!"}), 501
+    # if send_mail_to_verify(data['email'], data['full_name'], otp, request.host.title().lower()) == True:
+    #     db.session.add(new_user)
+    #     db.session.add(v)
+    #     db.session.commit()
+    #     return jsonify(response_base(200, "Vui lòng xác minh email trước khi đăng nhập!", {})), 200
+    # else:
+    #     return jsonify(response_base(0, "Lỗi hệ thống, không thể gửi email xác minh. Vui lòng thử lại!", {})), 0
+
+    new_user.is_verify = True
+    db.session.add(new_user)
+    db.session.commit()
+    return jsonify(response_base(200, "Đăng ký tài khoản thành công!", {}))
 
 
 @app.route('/user/me', methods=['GET'])
@@ -121,45 +136,46 @@ def get_my_profile(current_user):
         "img_avatar":current_user.img_avatar,
         "role":current_user.role
     }
-    return jsonify({"status":"success", "users":data}), 200
+    return jsonify(200, "Lấy dữ liệu thành Công!", {"users": data}), 200
 
 
 @app.route('/user/me', methods=['POST'])
 @token_required
 def promote_user(current_user):
+    data = get_request(request.get_json())
     type = request.args.get('change')
     if type == "avatar":
-        files = request.form.get('files', '')
+        files = data['files']
 
         if len(files) == 0:
-            return jsonify({"status":"error", "logs":"Data is empty!"}), 400
+            return jsonify(response_base(0, "Data trống!", {})), 0
 
         url_image = upload_image(files)
         if len(url_image) > 0:
             current_user.img_avatar = url_image
             db.session.commit()
-            return jsonify({'status':'success', 'logs':"Upload avatar successfully!"}), 200
+            return jsonify(response_base(200, "Upload avatar thành công!", {"img_src": url_image})), 200
         else:
-            return jsonify({'status':'error', 'logs': "Can't upload this image! Please try again!"}), 501
+            return jsonify(response_base(0, "Không thể upload, vui lòng thử lại!", {})), 0
     elif type == "password":
-        password_old = request.form.get('password_old', '')
-        password_new = request.form.get('password_new', '')
+        password_old = data['password_old']
+        password_new = data['password_new']
         if len(password_old) == 0 or len(password_new) == 0:
-            return jsonify({"status":"error", "logs":"Data is empty!"}), 400
+            return jsonify(0, "Data trống!", {}), 0
         if check_password_hash(current_user.password, password_old):
             current_user.password = generate_password_hash(password_new)
             db.session.commit()
-            return jsonify({"status":"success", "logs":"Update password successfully!"}), 200
+            return jsonify(response_base(200, "Đổi mật khẩu thành công!", {})), 200
         else:
-            return jsonify({"status":"error", "logs":"Password is incorrect!"}), 400
+            return jsonify(response_base(0, "Mật khẩu không chính xác!", {})), 0
 
     elif type == "information":
         try:
-            full_name = request.form.get('full_name', '')
-            birthday = request.form.get('birthday', '')
-            phone = request.form.get('phone', '')
-            address = request.form.get('address', '')
-            introduce = request.form.get('introduce', '')
+            full_name = data['full_name']
+            birthday = data['birthday']
+            phone = data['phone']
+            address = data['address']
+            introduce = data['introduce']
 
             current_user.full_name = full_name
             current_user.birthday = datetime.strptime(birthday, "%d/%m/%Y")
@@ -168,9 +184,9 @@ def promote_user(current_user):
             current_user.introduction = introduce
 
             db.session.commit()
-            return jsonify({"status":"success", "logs":"Update information successfully!"}), 200
+            return jsonify(response_base(200, "Update thành công!", {})), 200
         except:
-            return jsonify({"status":"error", "logs":"Error!!"}), 502
+            return jsonify(response_base(0, "Không thành công, vui lòng thử lại!", {})), 0
 
 
 
@@ -180,22 +196,23 @@ def verify_mail():
     k = VerifyMail.query.filter(VerifyMail.verify_code == code).first()
     if k:
         if k.is_verify == True:
-            return jsonify({"status": "error", "logs": "This account has been verified!"}), 400
+            return jsonify(response_base(0, "Tài khoản đã được xác minh!", {})), 0
         else:
             u = User.query.filter(User.email == k.to_email).first()
             if u:
                 u.is_verify = True
                 k.is_verify = True
                 db.session.commit()
-                return jsonify({"status": "success", "logs": "Account Verification Successful!"}), 200
+                return jsonify(response_base(200, "Xác minh email thành công!", {})), 200
     else:
-        return jsonify({"status": "error", "logs": "The verification code is incorrect, please try again!"}), 404
+        return jsonify(response_base(0, "Mã xác minh sai, vui lòng thử lại!", {})), 0
 
 
 @app.route('/login', methods=["POST"])
 def login():
-    username = request.form.get('username', '')
-    password = request.form.get('password', '')
+    data = get_request(request.get_json())
+    username = data['username']
+    password = data['password']
     user = User.query.filter(User.username == username).first()
     if not user:
         user = User.query.filter(User.email == username).first()
@@ -206,11 +223,11 @@ def login():
             if user.is_verify:
                 token = jwt.encode({"id":user.id, "exp":datetime.utcnow() + timedelta(hours=24)}, app.config['SECRET_KEY'])
                 # print(token)
-                return jsonify({"token": token.decode('UTF-8')}), 200
+                return jsonify(response_base(200, "Thành công!", {"token": token.decode('UTF-8')})), 200
             else:
-                return jsonify({"status": "error", "logs": "Please confirm your email to continue logging in."}), 401
+                return jsonify(response_base(0, "Vui lòng xác minh email trước khi đăng nhập!", {})), 0
 
-    return jsonify({"status":"error", "logs":"Username or password is incorrect!"}), 401
+    return jsonify(response_base(0, "Tài khoản hoặc mật khẩu không chính xác!", {})), 0
 
 
 

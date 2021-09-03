@@ -280,6 +280,7 @@ def upload_image(files):
 
     return url
 
+
 def get_uid_facebook(linkFacebook):
     url = 'https://id.atpsoftware.vn/'
     data = {
@@ -291,11 +292,16 @@ def get_uid_facebook(linkFacebook):
     except:
         return None
 
+
+def get_token_facebook():
+    return ''
+
+
 def check_content_facebook(linkFacebook, idPost, code):
     uidFacebook = get_uid_facebook(linkFacebook)
     if uidFacebook == None:
         return False
-    token = ""
+    token = get_token_facebook()
     fullIdPost = "{0}_{1}".format(uidFacebook, idPost)
     data = requests.get("https://graph.facebook.com/v11.0/{0}?access_token={1}".format(fullIdPost, token)).json()
     try:
@@ -308,4 +314,18 @@ def check_content_facebook(linkFacebook, idPost, code):
 
     except:
         return data['message'] == code
+
+
+def response_base(responseCode, logs,data):
+    data = {
+        "errorCode": responseCode,
+        "logs": logs,
+        "wsResponse": data
+    }
+
+    return data
+
+
+def get_request(data):
+    return data["wsRequest"]
 
