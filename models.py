@@ -25,6 +25,9 @@ class User(db.Model):
     banned = Column(Integer, default=0)
     banned_count = Column(Integer, default=0)
     role = Column(Integer, default=2)
+    money_du = Column(BigInteger, default=0)
+    money_da_dung = Column(BigInteger, default=0)
+    money_hold = Column(BigInteger, default=0)
 
 
 class Rating(db.Model):

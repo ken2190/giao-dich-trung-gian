@@ -82,6 +82,8 @@ def get_one_user(username):
 def create_user():
     data = get_request(request.get_json())
 
+    data['username'] = remove_accents(data['username'])
+
     user = User.query.filter(User.username==data['username'] or User.email == data['email']).first()
     if user:
         return jsonify(response_base(0, "Username hoặc email đã được sử dụng, vui lòng thử lại!", {})), 0
@@ -136,7 +138,7 @@ def get_my_profile(current_user):
         "img_avatar":current_user.img_avatar,
         "role":current_user.role
     }
-    return jsonify(200, "Lấy dữ liệu thành Công!", {"users": data}), 200
+    return jsonify(response_base(200, "Lấy dữ liệu thành Công!", {"users": data})), 200
 
 
 @app.route('/user/me', methods=['POST'])
@@ -223,13 +225,68 @@ def login():
             if user.is_verify:
                 token = jwt.encode({"id":user.id, "exp":datetime.utcnow() + timedelta(hours=24)}, app.config['SECRET_KEY'])
                 # print(token)
-                return jsonify(response_base(200, "Thành công!", {"token": token.decode('UTF-8')})), 200
+                return jsonify(response_base(200, "Đăng nhập thành công!", {"token": token.decode('UTF-8')})), 200
             else:
                 return jsonify(response_base(0, "Vui lòng xác minh email trước khi đăng nhập!", {})), 0
 
     return jsonify(response_base(0, "Tài khoản hoặc mật khẩu không chính xác!", {})), 0
 
 
+@app.route('/search', methods=['GET'])
+@token_required
+def search_user(current_user):
+    try:
+        if "query" in request.args:
+            content = request.args.get('query', '')
+            user_list_username = User.query.filter(User.username.contains(content)).all()
+            user_list_fullname = User.query.filter(User.full_name.contains(content)).all()
+
+            data_username = []
+            data_fullname = []
+
+            for user in user_list_username:
+                data = {
+                    "email": user.email,
+                    "username":user.username,
+                    "full_name":user.full_name,
+                    "birthday":user.birthday.strftime("%m/%d/%Y"),
+                    "join_date":user.join_date.strftime("%m/%d/%Y"),
+                    "introduction":user.introduction,
+                    "address":user.address,
+                    "src_facebook":user.src_facebook,
+                    "src_youtube":user.src_youtube,
+                    "zalo_number":user.src_zalo,
+                    "phone_number":user.phone_number,
+                    "is_verify_card":user.is_indentity_verification,
+                    "img_avatar":user.img_avatar,
+                    "role":user.role
+                }
+                data_username.append(data)
+
+            for user in user_list_fullname:
+                data = {
+                    "email": user.email,
+                    "username": user.username,
+                    "full_name": user.full_name,
+                    "birthday": user.birthday.strftime("%m/%d/%Y"),
+                    "join_date": user.join_date.strftime("%m/%d/%Y"),
+                    "introduction": user.introduction,
+                    "address": user.address,
+                    "src_facebook": user.src_facebook,
+                    "src_youtube": user.src_youtube,
+                    "zalo_number": user.src_zalo,
+                    "phone_number": user.phone_number,
+                    "is_verify_card": user.is_indentity_verification,
+                    "img_avatar": user.img_avatar,
+                    "role": user.role
+                }
+                data_fullname.append(data)
+
+            return jsonify(response_base(200, "Lấy dữ liệu thành công!", {"username": data_username, "full_name": data_fullname}))
+        else:
+            return jsonify(response_base(0, "Không thể lấy dữ liệu!", {}))
+    except:
+        return jsonify(response_base(0, "Không thể lấy dữ liệu!", {}))
 
 
 
