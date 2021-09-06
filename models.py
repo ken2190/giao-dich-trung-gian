@@ -8,8 +8,8 @@ class User(db.Model):
     username = Column(String(255), nullable=False)
     password = Column(String(255), nullable=False)
     full_name = Column(String(255))
-    birthday = Column(DateTime, default=datetime.now())
-    join_date = Column(DateTime, default=datetime.now())
+    birthday = Column(DateTime, default=datetime.utcnow())
+    join_date = Column(DateTime, default=datetime.utcnow())
     introduction = Column(Text, default="")
     address = Column(Text, default="")
     src_facebook = Column(Text, default="")
@@ -37,7 +37,7 @@ class Rating(db.Model):
     from_transaction = Column(String(255))
     content = Column(Text, default="")
     star_number = Column(Integer)
-    submit_date = Column(DateTime, default=datetime.now())
+    submit_date = Column(DateTime, default=datetime.utcnow())
     src_img = Column(Text)
 
 
@@ -72,7 +72,7 @@ class BankRequest(db.Model):
     transaction_id = Column(String(255))
     transaction_code = Column(String(255), default="")
     img_src = Column(Text, default="")
-    time_sent = Column(DateTime, default=datetime.now())
+    time_sent = Column(DateTime, default=datetime.utcnow())
     time_accept = Column(DateTime)
     status = Column(Integer, default=0)
     uid_admin = Column(String(255))
@@ -82,15 +82,16 @@ class Transaction(db.Model):
     id = Column(String(255), primary_key=True)
     uid_sender = Column(String(255))
     uid_received = Column(String(255))
-    date_created = Column(DateTime, default=datetime.now())
+    date_created = Column(DateTime, default=datetime.utcnow())
     date_expired = Column(DateTime)
+    date_confirm = Column(DateTime)
     value = Column(BigInteger)
     value_received = Column(BigInteger)
     title = Column(Text)
     description = Column(Text)
     is_accepted = Column(Boolean, default=False)
     status_sender = Column(Integer, default=0)
-    starus_received = Column(Integer, default=0)
+    status_received = Column(Integer, default=0)
     is_done = Column(Integer, default=0)
 
 
@@ -100,7 +101,7 @@ class MessageHistory(db.Model):
     id_transaction = Column(String(255))
     uid_send = Column(String(255))
     content = Column(Text, default="")
-    sent_date = Column(DateTime, default=datetime.now())
+    sent_date = Column(DateTime, default=datetime.utcnow())
 
 
 class VerifyMail(db.Model):
@@ -119,7 +120,7 @@ class Notify(db.Model):
     from_name = Column(Text)
     title = Column(Text)
     content = Column(Text)
-    n_time = Column(DateTime, default=datetime.now())
+    n_time = Column(DateTime, default=datetime.utcnow())
     is_read = Column(Boolean, default=False)
 
 

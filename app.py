@@ -40,6 +40,7 @@ def get_one_user(username):
         data = {
             "email": user_query.email,
             "username":user_query.username,
+            "id": user_query.id,
             "full_name":user_query.full_name,
             "birthday":user_query.birthday.strftime("%m/%d/%Y"),
             "join_date":user_query.join_date.strftime("%m/%d/%Y"),
@@ -125,6 +126,7 @@ def get_my_profile(current_user):
     data = {
         "email": current_user.email,
         "username":current_user.username,
+        "id": current_user.id,
         "full_name":current_user.full_name,
         "birthday":current_user.birthday.strftime("%m/%d/%Y"),
         "join_date":current_user.join_date.strftime("%m/%d/%Y"),
@@ -247,6 +249,7 @@ def search_user(current_user):
             for user in user_list_username:
                 data = {
                     "email": user.email,
+                    "id": user.id,
                     "username":user.username,
                     "full_name":user.full_name,
                     "birthday":user.birthday.strftime("%m/%d/%Y"),
@@ -266,6 +269,7 @@ def search_user(current_user):
             for user in user_list_fullname:
                 data = {
                     "email": user.email,
+                    "id":user.id,
                     "username": user.username,
                     "full_name": user.full_name,
                     "birthday": user.birthday.strftime("%m/%d/%Y"),
@@ -288,6 +292,157 @@ def search_user(current_user):
     except:
         return jsonify(response_base(0, "Không thể lấy dữ liệu!", {}))
 
+
+@app.route('/home', methods=['GET'])
+@token_required
+def home_page(current_user):
+    # get last ip login
+    last_ip_login = request.remote_addr
+
+    # get Transction
+    data_tranactions = Transaction.query.filter(Transaction.uid_sender == current_user.id or Transaction.uid_received == current_user.id).all()
+    number_transaction = len(data_tranactions)
+    sucess_number = 0
+    failed_number = 0
+    for transaction in data_tranactions:
+        if transaction.is_done == 2:
+            sucess_number += 1
+        elif transaction.is_done == 3:
+            failed_number += 1
+
+    trans_data_response = {
+        "number_transaction":number_transaction,
+        "success":sucess_number,
+        "failed":failed_number,
+        "pending":number_transaction - sucess_number - failed_number
+    }
+
+    # get Notify
+    data_notices = Notify.query.filter(Notify.n_uid == current_user.id).all()
+    noti_data_response = []
+    for noti in data_notices:
+        noti_data_response.append({
+            "id":noti.id,
+            "from":noti.from_name,
+            "title":noti.title,
+            "content":noti.content,
+            "time":noti.n_time.strftime("%m/%d/%Y"),
+            "mark_read":noti.is_read
+        })
+
+    # get Top 10
+    # data_trans_week = Transaction.query.filter(Transaction.date_confirm <= datetime.utcnow() and Transaction.date_confirm >= datetime.utcnow() - timedelta(days=7)).all()
+    # user_trans_in_week = []
+    # for tran in data_trans_week:
+    #     user_trans_in_week.append(tran.uid_sender)
+    #     user_trans_in_week.append(tran.uid_received)
+    # user_trans_in_week = list(set(user_trans_in_week))
+    # for user in user_trans_in_week:
+    #     data = {
+    #         "user_id":user,
+    #         "full_name":
+    #         "coin":0
+    #     }
+    top_10_week_response = []
+
+
+    return jsonify(response_base(200, "Lấy dữ liệu thành công!", {"last_ip_login":last_ip_login, "notify":noti_data_response, "transation_data":trans_data_response, "top10":top_10_week_response}))
+
+
+@app.route('/transaction/all', methods=["GET"])
+@token_required
+def list_transation(current_user):
+    if current_user.role == 0:
+        all_transaction = Transaction.query.filter().all()
+    else:
+        all_transaction = Transaction.query.filter(Transaction.uid_sender == current_user.id or Transaction.uid_received == current_user.id).all()
+    transation_response = []
+    for tran in all_transaction:
+        data = {
+            "title":tran.title,
+            "time_created":tran.date_created,
+            "time_expired":tran.date_expired,
+            "status":tran.is_done
+        }
+        transation_response.append(data)
+
+    return jsonify(response_base(200, "Lấy dữ liệu thành công!", transation_response))
+
+
+
+@app.route("/transaction/gerenal", methods=["GET"])
+@token_required
+def transaction_gerenal(current_user):
+    # get params id noti để set noti read = true
+    pass
+
+
+@app.route('/transaction/create', methods=["POST"])
+@token_required
+def transaction_create(current_user):
+    data = get_request(request.get_json())
+    trans_created = Transaction()
+    trans_created.id = random_str(12)
+    data['title'] = remove_accents(data['title'])
+    data['description'] = remove_accents(data['description'])
+    if current_user.id == data['uid_sender']:
+        if current_user.money_du < data['value']:
+            return jsonify(response_base(0, "Số dư không đủ!", {}))
+        user_received = User.query.filter(User.id == data['uid_received'])
+
+        trans_created.uid_sender = data['uid_sender']
+        trans_created.uid_received = data['uid_received']
+        trans_created.date_created = datetime.utcnow()
+        trans_created.date_expired = datetime.strptime(data['time_experied'], "%d/%m/%Y")
+        trans_created.value = data['value']
+        trans_created.value_received = data['value'] * 1
+        trans_created.title = data['title']
+        trans_created.description = data['description']
+
+        noti = Notify()
+        noti.n_uid = data['uid_received']
+        noti.from_name = current_user.full_name
+        noti.title = data['title']
+        noti.content = "Ban co 1 giao dich moi voi tai khoan %s dang cho xac nhan" % current_user.full_name
+        noti.n_time = datetime.utcnow()
+
+        db.session.add(noti)
+        db.session.add(trans_created)
+        db.session.commit()
+        return jsonify(response_base(200, "Gửi yêu cầu giao dịch thành công!", {}))
+    else:
+        user_sender = User.query.filter(User.id == data['uid_sender']).first()
+        if user_sender.money_du < data['value']:
+            return jsonify(response_base(0, "Số dư không đủ!", {}))
+
+        trans_created.uid_sender = data['uid_sender']
+        trans_created.uid_received = data['uid_received']
+        trans_created.date_created = datetime.utcnow()
+        trans_created.date_expired = datetime.strptime(data['time_experied'], "%d/%m/%Y")
+        trans_created.value = data['value']
+        trans_created.value_received = data['value'] * 1
+        trans_created.title = data['title']
+        trans_created.description = data['description']
+
+        noti = Notify()
+        noti.n_uid = user_sender.full_name
+        noti.from_name = current_user.full_name
+        noti.title = data['title']
+        noti.content = "Ban co 1 giao dich moi voi tai khoan %s dang cho xac nhan" % current_user.full_name
+        noti.n_time = datetime.utcnow()
+
+        db.session.add(noti)
+        db.session.add(trans_created)
+        db.session.commit()
+        return jsonify(response_base(200, "Gửi yêu cầu giao dịch thành công!", {}))
+
+
+@app.route('/transaction/accept', methods=["POST"])
+@token_required
+def transaction_accept(current_user):
+    data = get_request(request.get_json())
+
+    return ''
 
 
 if __name__ == "__main__":
