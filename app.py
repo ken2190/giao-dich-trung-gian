@@ -352,19 +352,44 @@ def home_page(current_user):
 @app.route('/transaction/all', methods=["GET"])
 @token_required
 def list_transation(current_user):
+    transation_response = []
     if current_user.role == 0:
         all_transaction = Transaction.query.filter().all()
+        for tran in all_transaction:
+            data = {
+                "id": tran.id,
+                "title": tran.title,
+                "time_created": tran.date_created.strftime("%m/%d/%Y"),
+                "time_expired": tran.date_expired.strftime("%m/%d/%Y"),
+                "status": tran.is_done
+            }
+            transation_response.append(data)
     else:
-        all_transaction = Transaction.query.filter(Transaction.uid_sender == current_user.id or Transaction.uid_received == current_user.id).all()
-    transation_response = []
-    for tran in all_transaction:
-        data = {
-            "title":tran.title,
-            "time_created":tran.date_created,
-            "time_expired":tran.date_expired,
-            "status":tran.is_done
-        }
-        transation_response.append(data)
+        for tran in Transaction.query.filter(Transaction.uid_sender == current_user.id).all():
+            data = {
+                "id": tran.id,
+                "title": tran.title,
+                "time_created": tran.date_created.strftime("%m/%d/%Y"),
+                "time_expired": tran.date_expired.strftime("%m/%d/%Y"),
+                "status": tran.is_done
+            }
+            if tran.is_done != 0:
+                data.update({'time_confirm':tran.date_confirm})
+            transation_response.append(data)
+
+        for tran in Transaction.query.filter(Transaction.uid_received == current_user.id).all():
+            data = {
+                "id": tran.id,
+                "title": tran.title,
+                "time_created": tran.date_created.strftime("%m/%d/%Y"),
+                "time_expired": tran.date_expired.strftime("%m/%d/%Y"),
+                "status": tran.is_done
+            }
+            if tran.is_done != 0:
+                data.update({'time_confirm':tran.date_confirm})
+            transation_response.append(data)
+
+
 
     return jsonify(response_base(200, "Lấy dữ liệu thành công!", transation_response))
 
@@ -374,7 +399,44 @@ def list_transation(current_user):
 @token_required
 def transaction_gerenal(current_user):
     # get params id noti để set noti read = true
-    pass
+    room = request.args.get("room", '')
+    if "notify" in request.args:
+        noti = Notify.query.filter(Notify.n_uid == room).first()
+        noti.is_read = True
+
+    is_verify_room = True
+    transaction = Transaction.query.filter(Transaction.id == room).first()
+    if not transaction:
+        return jsonify(response_base(0, "Không tìm thấy phòng giao dịch!", {}))
+    elif transaction.uid_sender != current_user.id and  transaction.uid_received != current_user.id:
+        return jsonify(response_base(0, "Không có quyền truy cập!", {}))
+
+    if transaction.uid_sender == current_user.id and transaction.status_sender == 0:
+        is_verify_room = False
+    elif transaction.uid_received == current_user.id and transaction.status_received == 0:
+        is_verify_room = False
+
+    info = {
+        'time_created':transaction.date_created.strftime("%m/%d/%Y"),
+        'time_expered':transaction.date_expired.strftime("%m/%d/%Y"),
+        'value':transaction.value,
+        'value_received':transaction.value_received,
+        'title':transaction.title,
+        'description':transaction.description,
+        'id':transaction.id
+    }
+
+    data_response = {
+        'is_confirm': transaction.is_done,
+        'data': info,
+        'is_accepted': transaction.is_accepted,
+        'is_verify_room': is_verify_room
+    }
+
+    if transaction.is_done != 0:
+        data_response.update({'time_confirm':transaction.date_confirm.strftime("%m/%d/%Y")})
+
+    return jsonify(response_base(200, "Lấy dữ liệu thành công!", data_response))
 
 
 @app.route('/transaction/create', methods=["POST"])
@@ -385,65 +447,110 @@ def transaction_create(current_user):
     trans_created.id = random_str(12)
     data['title'] = remove_accents(data['title'])
     data['description'] = remove_accents(data['description'])
-    if current_user.id == data['uid_sender']:
-        if current_user.money_du < data['value']:
-            return jsonify(response_base(0, "Số dư không đủ!", {}))
-        user_received = User.query.filter(User.id == data['uid_received'])
+    try:
+        if current_user.id == data['uid_sender']:
+            if current_user.money_du < data['value']:
+                return jsonify(response_base(0, "Số dư không đủ!", {}))
 
-        trans_created.uid_sender = data['uid_sender']
-        trans_created.uid_received = data['uid_received']
-        trans_created.date_created = datetime.utcnow()
-        trans_created.date_expired = datetime.strptime(data['time_experied'], "%d/%m/%Y")
-        trans_created.value = data['value']
-        trans_created.value_received = data['value'] * 1
-        trans_created.title = data['title']
-        trans_created.description = data['description']
+            trans_created.uid_sender = data['uid_sender']
+            trans_created.uid_received = data['uid_received']
+            trans_created.date_created = datetime.utcnow()
+            trans_created.date_expired = datetime.strptime(data['time_experied'], "%d/%m/%Y")
+            trans_created.value = data['value']
+            trans_created.value_received = data['value'] * 0.90
+            trans_created.title = data['title']
+            trans_created.description = data['description']
+            trans_created.status_sender = 1
 
-        noti = Notify()
-        noti.n_uid = data['uid_received']
-        noti.from_name = current_user.full_name
-        noti.title = data['title']
-        noti.content = "Ban co 1 giao dich moi voi tai khoan %s dang cho xac nhan" % current_user.full_name
-        noti.n_time = datetime.utcnow()
+            noti = Notify()
+            noti.n_uid = trans_created.id
+            noti.from_name = current_user.full_name
+            noti.title = data['title']
+            noti.content = "Ban co 1 giao dich moi voi tai khoan %s dang cho xac nhan" % current_user.full_name
+            noti.n_time = datetime.utcnow()
 
-        db.session.add(noti)
-        db.session.add(trans_created)
-        db.session.commit()
+            db.session.add(noti)
+            db.session.add(trans_created)
+            db.session.commit()
+        else:
+            user_sender = User.query.filter(User.id == data['uid_sender']).first()
+            if user_sender.money_du < data['value']:
+                return jsonify(response_base(0, "Số dư không đủ!", {}))
+
+            trans_created.uid_sender = data['uid_sender']
+            trans_created.uid_received = data['uid_received']
+            trans_created.date_created = datetime.utcnow()
+            trans_created.date_expired = datetime.strptime(data['time_experied'], "%d/%m/%Y")
+            trans_created.value = data['value']
+            trans_created.value_received = data['value'] * 0.9
+            trans_created.title = data['title']
+            trans_created.description = data['description']
+            trans_created.status_received = 1
+
+            noti = Notify()
+            noti.n_uid = trans_created.id
+            noti.from_name = current_user.full_name
+            noti.title = data['title']
+            noti.content = "Ban co 1 giao dich moi voi tai khoan %s dang cho xac nhan" % current_user.full_name
+            noti.n_time = datetime.utcnow()
+
+            db.session.add(noti)
+            db.session.add(trans_created)
+            db.session.commit()
+
         return jsonify(response_base(200, "Gửi yêu cầu giao dịch thành công!", {}))
-    else:
-        user_sender = User.query.filter(User.id == data['uid_sender']).first()
-        if user_sender.money_du < data['value']:
-            return jsonify(response_base(0, "Số dư không đủ!", {}))
-
-        trans_created.uid_sender = data['uid_sender']
-        trans_created.uid_received = data['uid_received']
-        trans_created.date_created = datetime.utcnow()
-        trans_created.date_expired = datetime.strptime(data['time_experied'], "%d/%m/%Y")
-        trans_created.value = data['value']
-        trans_created.value_received = data['value'] * 1
-        trans_created.title = data['title']
-        trans_created.description = data['description']
-
-        noti = Notify()
-        noti.n_uid = user_sender.full_name
-        noti.from_name = current_user.full_name
-        noti.title = data['title']
-        noti.content = "Ban co 1 giao dich moi voi tai khoan %s dang cho xac nhan" % current_user.full_name
-        noti.n_time = datetime.utcnow()
-
-        db.session.add(noti)
-        db.session.add(trans_created)
-        db.session.commit()
-        return jsonify(response_base(200, "Gửi yêu cầu giao dịch thành công!", {}))
+    except:
+        return jsonify(response_base(0, "Lỗi, không thể tạo giao dịch, vui lòng thử lại!", {}))
 
 
 @app.route('/transaction/accept', methods=["POST"])
 @token_required
 def transaction_accept(current_user):
     data = get_request(request.get_json())
+    transaction = Transaction.query.filter(Transaction.id == data['id']).first()
+    user_sender = User.query.filter(User.id == transaction.uid_sender)
+    user_received = User.query.filter(User.id == transaction.uid_received)
 
-    return ''
+    if current_user.id != user_received.id and current_user.id != user_sender.id:
+        return jsonify(response_base(0, "Bạn không có quyền trong phòng giao dịch này!", {}))
 
+
+    if user_sender.money_du < transaction.value:
+        return jsonify(response_base(0, "Số dư không đủ!", {}))
+
+    user_sender.money_du -= transaction.value
+    transaction.is_accepted = True
+    transaction.status_sender = 1
+    transaction.status_received = 1
+    user_received.money_hold = transaction.value_received
+
+    db.session.commit()
+
+    return jsonify(200, "Mở giao dịch thành công!", {})
+
+@app.route('/transaction/delete', methods=["POST"])
+@token_required
+def transaction_delete(current_user):
+    data = get_request(request.get_json())
+    transaction = Transaction.query.filter(Transaction.id == data['id']).first()
+    if not transaction:
+        return jsonify(response_base(0, "Không tìm thấy phòng giao dịch!", {}))
+    user_sender = User.query.filter(User.id == transaction.uid_sender).first()
+    user_received = User.query.filter(User.id == transaction.uid_received).first()
+
+    if current_user.id != user_received.id and current_user.id != user_sender.id:
+        return jsonify(response_base(0, "Bạn không có quyền trong phòng giao dịch này!", {}))
+
+    if transaction.status_sender * transaction.status_received == 0:
+        db.session.delete(transaction)
+        db.session.commit()
+        return jsonify(response_base(200, "Hủy giao dịch thành công!", {}))
+    else:
+        user_sender.money_du += transaction.value_received
+        user_received.money_hold -= transaction.value
+        db.session.delete(transaction)
+        db.session.commit()
+        return jsonify(200, "Hủy giao dịch thành công, đã hoàn tiền!", {})
 
 if __name__ == "__main__":
     app.run(debug=True)
