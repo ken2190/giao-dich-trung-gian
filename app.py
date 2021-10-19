@@ -374,8 +374,9 @@ def list_transation(current_user):
                 "status": tran.is_done
             }
             if tran.is_done != 0:
-                data.update({'time_confirm':tran.date_confirm})
-            transation_response.append(data)
+                data.update({'time_confirm': tran.date_confirm})
+            if tran.status_sender != 0:
+                transation_response.append(data)
 
         for tran in Transaction.query.filter(Transaction.uid_received == current_user.id).all():
             data = {
@@ -387,7 +388,8 @@ def list_transation(current_user):
             }
             if tran.is_done != 0:
                 data.update({'time_confirm':tran.date_confirm})
-            transation_response.append(data)
+            if tran.status_received != 0:
+                transation_response.append(data)
 
 
 
@@ -462,14 +464,15 @@ def transaction_create(current_user):
             trans_created.description = data['description']
             trans_created.status_sender = 1
 
-            noti = Notify()
-            noti.n_uid = trans_created.id
-            noti.from_name = current_user.full_name
-            noti.title = data['title']
-            noti.content = "Ban co 1 giao dich moi voi tai khoan %s dang cho xac nhan" % current_user.full_name
-            noti.n_time = datetime.utcnow()
+            # noti = Notify()
+            # noti.n_uid = trans_created.id
+            # noti.from_name = current_user.full_name
+            # noti.title = data['title']
+            # noti.content = "Ban co 1 giao dich moi voi tai khoan %s dang cho xac nhan" % current_user.full_name
+            # noti.n_time = datetime.utcnow()
 
-            db.session.add(noti)
+            # db.session.add(noti)
+
             db.session.add(trans_created)
             db.session.commit()
         else:
@@ -487,18 +490,19 @@ def transaction_create(current_user):
             trans_created.description = data['description']
             trans_created.status_received = 1
 
-            noti = Notify()
-            noti.n_uid = trans_created.id
-            noti.from_name = current_user.full_name
-            noti.title = data['title']
-            noti.content = "Ban co 1 giao dich moi voi tai khoan %s dang cho xac nhan" % current_user.full_name
-            noti.n_time = datetime.utcnow()
+            # noti = Notify()
+            # noti.n_uid = trans_created.id
+            # noti.from_name = current_user.full_name
+            # noti.title = data['title']
+            # noti.content = "Ban co 1 giao dich moi voi tai khoan %s dang cho xac nhan" % current_user.full_name
+            # noti.n_time = datetime.utcnow()
+            #
+            # db.session.add(noti)
 
-            db.session.add(noti)
             db.session.add(trans_created)
             db.session.commit()
 
-        return jsonify(response_base(200, "Gửi yêu cầu giao dịch thành công!", {}))
+        return jsonify(response_base(200, "Gửi yêu cầu tạo giao dịch thành công!", {"id_room": trans_created.id}))
     except:
         return jsonify(response_base(0, "Lỗi, không thể tạo giao dịch, vui lòng thử lại!", {}))
 
@@ -551,6 +555,80 @@ def transaction_delete(current_user):
         db.session.delete(transaction)
         db.session.commit()
         return jsonify(200, "Hủy giao dịch thành công, đã hoàn tiền!", {})
+
+
+
+@app.route('/transaction/submit', methods=["POST"])
+@token_required
+def submit_transaction(current_user):
+    data = get_request(request.get_json())
+    id_room = data['id_room']
+    is_accept = data['is_accept']
+    room = Transaction.query.filter(Transaction.id == id_room and (Transaction.uid_sender == current_user.id or Transaction.uid_received == current_user.id)).first()
+    if not room:
+        return jsonify(0, "Không tìm thấy phòng!", {})
+    else:
+        if current_user.id == room.uid_sender:
+            if is_accept:
+                room.status_sender = 1
+            else:
+                room.status_sender = 2
+        else:
+            if is_accept:
+                room.status_received = 1
+            else:
+                room.status_received = 2
+
+    db.session.comit()
+    return jsonify(200, "Cập nhật thành công!", {})
+
+@app.route('/report', methods=["POST"])
+@token_required
+def reported_post(current_user):
+    try:
+        data = get_request(request.get_json())
+        report_created = ReportHistory()
+        report_created.uid = current_user.id
+        report_created.title = data['title']
+        report_created.content = data['content']
+        db.session.add(report_created)
+        db.commit()
+        return jsonify(response_base(200, "Gửi báo cáo thành công!", {}))
+    except:
+        return jsonify(response_base(0, "Không thành công!", {}))
+
+@app.route('/report', methods=["GET"])
+@token_required
+def reported_list(current_user):
+    if 'all' == request.args.get("id"):
+        if current_user.role == 0:
+            data = ReportHistory.query.filter().all()
+        else:
+            data = ReportHistory.query.filter(ReportHistory.uid == current_user.id).all()
+
+
+        data_response = []
+        for row in data:
+            rp = {
+                'uid': row.uid,
+                'title': row.title,
+                'content': row.content,
+                'status': row.is_done
+            }
+            data_response.append(rp)
+
+        return jsonify(response_base(200, "Lấy dữ liệu thành công!", data_response))
+    else:
+        id = request.args.get("id")
+        data = ReportHistory.query.filter(ReportHistory.id == id).first()
+        data_response = {
+            'uid': data.uid,
+            'title': data.title,
+            'content': data.content,
+            'status': data.is_done
+        }
+        return jsonify(200, "Lấy dữ liệu thành công!", data_response)
+
 
 if __name__ == "__main__":
     app.run(debug=True)
